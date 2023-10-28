@@ -17,6 +17,20 @@ the control loop itself.
 
 So let's give it a go. 
 
+## A Project
+
+I was realizing that I could make a little blog series -> book out of this. What I can do is take questions like "When should you use Fox or Schaefer" and use these simulations to get to the bottom of it. So I'm just going to take specific questions, carve out my Thursdays (writing day) for it and for each question, answer it and write up a report on it. Then these reports can go into medium and eventually a book. 
+
+And what's also neat is I'll end up with a compendium of fisheries, model fitting, and the like naturally as a part of answering these questions. Pretty cool!
+
+### Some Ideas
+
+1. When to use Fox v Schaefer
+2. What happens when you include variability in r and K
+3. What's the right error terms?
+4. What happens when q is not linear?
+5. What happens when there is age selectivity?
+
 ## Data
 
 `rocklobster.csv` is from a fisheries management class from University of Florida. 
