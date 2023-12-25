@@ -15,3 +15,9 @@ RUN pip install jupyterlab==4.0.7 \
                 tqdm==4.66.1 \
                 scipy==1.11.3 \
                 scikit-learn==1.3.2
+
+RUN apt-get -y install r-base r-base-dev
+RUN apt-get -y install libxml2-dev libssl-dev pandoc
+RUN apt-get -y install texlive-latex-base texlive-latex-recommended texlive-fonts-recommended texlive-latex-extra
+RUN apt-get -y install libcurl4-gnutls-dev libxml2-dev libssl-dev libgit2-dev libfontconfig1-dev libharfbuzz-dev libfribidi-dev 
+RUN apt-get -y install libfreetype6-dev libpng-dev libtiff5-dev libjpeg-dev cmake libgdal-dev libudunits2-dev 
