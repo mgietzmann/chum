@@ -5,6 +5,7 @@ import json
 from tqdm import tqdm
 from time import time
 from collections import Counter, defaultdict
+import pandas as pd
 
 
 class ComputeContainer(object):
@@ -51,6 +52,7 @@ class Exchanger(object):
         self.sub_queues = sub_queues
         self.pub_queues = pub_queues
         self.state = None
+        self.data = []
 
     def accumulate_state(self):
         self.state = {
@@ -75,12 +77,29 @@ class Exchanger(object):
         self.state['positions'] = np.array(self.state['positions'])
         self.state['weights'] = np.array(self.state['weights'])
 
+        self.data.append(
+            pd.DataFrame([
+                {
+                    'tag': tag,
+                    'position': position[0],
+                    'weight': weight
+                }
+                for tag, position, weight in zip(
+                    self.state['tags'], self.state['positions'], self.state['weights']
+                )
+            ])
+        )
+
     def exchange(self):
         self.accumulate_state()
         for sub_queue in self.sub_queues:
             sub_queue.put(self.state)
         self.state = None
 
+    def retrieve(self):
+        for i, df in enumerate(self.data):
+            df['time'] = i
+        return pd.concat(self.data)
 
 class Area(object):
     def __init__(self, value, centroid, unit_territory_radius, unit_value):
@@ -181,7 +200,7 @@ def divide_agents(agents, num_processes):
     return divided_agents
 
 @click.command()
-@click.option('-n', '--num-agents', default=100, type=int)
+@click.option('-n', '--num-agents', default=10, type=int)
 @click.option('-p', '--num-processes', default=10, type=int)
 @click.option('-s', '--time-steps', default=100, type=int)
 @click.option('-o', '--output-file', default='output.csv')
@@ -201,11 +220,12 @@ def main(
         habitat_radius * 2
     )
 
-    habitat_values = habitat_centroids
+    habitat_values = np.sin(habitat_centroids*np.pi*3)
+    habitat_values[habitat_values < 0] = 0
     habitat_centroids = np.array([
         [x] for x in habitat_centroids
     ])
-    unit_value = np.min(habitat_values)
+    unit_value = max(np.min(habitat_values), 0.00025)
     unit_territory_radius = (habitat_radius * 2) * 3
 
     habitats = [
@@ -265,10 +285,8 @@ def main(
                 queue.get()
 
     print('writing results')
-    results = [list(agent.position) for agent in fish]
-    with open(output_file, 'w') as f:
-        json.dump(results, f)
-    print('done')
+    df = exchanger.retrieve()
+    df.to_csv(output_file, index=False)
 
 if __name__ == '__main__':
     main()
