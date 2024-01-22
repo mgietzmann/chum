@@ -28,7 +28,9 @@ class ComputeContainer(object):
     def signal(self):
         self.write_state = []
         for agent in self.agents:
-            self.write_state.append(agent.signal())
+            signal = agent.signal()
+            if signal:
+                self.write_state.append(signal)
         self.read_state = None
 
         self.pub_queue.put(self.write_state)
@@ -59,6 +61,7 @@ class Exchanger(object):
             'tags': [],
             'positions': [],
             'weights': [],
+            'reserves': [],
             'winners': defaultdict(int)
         }
         for pub_queue in self.pub_queues:
@@ -68,24 +71,29 @@ class Exchanger(object):
                     for tag, won_value in new_state[1].items():
                         self.state['winners'][tag] += won_value
                 else:
-                    tag, position, weight = new_state[1]
+                    tag, position, weight, reserves = new_state[1]
                     self.state['tags'].append(tag)
                     self.state['positions'].append(position)
                     self.state['weights'].append(weight)
+                    self.state['reserves'].append(reserves)
 
         self.state['tags'] = np.array(self.state['tags'])
         self.state['positions'] = np.array(self.state['positions'])
         self.state['weights'] = np.array(self.state['weights'])
+        self.state['reserves'] = np.array(self.state['reserves'])
 
         self.data.append(
             pd.DataFrame([
                 {
                     'tag': tag,
                     'position': position[0],
-                    'weight': weight
+                    'weight': weight,
+                    'reserves': reserves,
+                    'win': self.state['winners'].get(tag, 0),
                 }
-                for tag, position, weight in zip(
-                    self.state['tags'], self.state['positions'], self.state['weights']
+                for tag, position, weight, reserves in zip(
+                    self.state['tags'], self.state['positions'], self.state['weights'],
+                    self.state['reserves']
                 )
             ])
         )
@@ -140,7 +148,7 @@ class Area(object):
 class Fish(object):
     def __init__(
         self, tag, position, weight, habitat_centroids, habitat_values, 
-        unit_territory_radius, rate_limiter
+        unit_territory_radius, rate_limiter, consumption_rate, bounds
     ):
         self.tag = tag
         self.position = position
@@ -150,13 +158,28 @@ class Fish(object):
         self.unit_territory_radius = unit_territory_radius
         self.territory_radius = unit_territory_radius * np.sqrt(self.weight)
         self.rate_limiter = rate_limiter
+        self.reserves = weight
+        self.consumption_rate = consumption_rate
+        self.bounds = bounds
+
+    def edge_modifier(self, position):
+        upper = min(position[0] + self.territory_radius, self.bounds[1])
+        lower = max(position[0] - self.territory_radius, self.bounds[0])
+        return (upper - lower) / (2 * self.territory_radius)
 
     def sense(self, state):
         self.fish_weights = np.array(state['weights'])
         self.fish_positions = np.array(state['positions'])
         self.fish_tags = np.array(state['tags'])
+        self.wins = state['winners'].get(self.tag, 0)
 
     def act(self):
+        self.reserves -= self.consumption_rate * self.weight
+        self.reserves += self.wins
+        if self.reserves <= 0:
+            return
+        
+        # determine new position
         differences = self.fish_positions - self.position
         distances = np.linalg.norm(differences, axis=1)
         territory_sizes = self.unit_territory_radius * np.sqrt(self.fish_weights)
@@ -181,7 +204,7 @@ class Fish(object):
             differences = positions - centroid
             distances = np.linalg.norm(differences, axis=1)
             sub_weights = weights[distances <= territory_sizes]
-            expected_value = self.weight / (np.sum(sub_weights) + self.weight) * value
+            expected_value = self.weight / (np.sum(sub_weights) + self.weight) * value * self.edge_modifier(centroid)
             if expected_value > best_value:
                 best_value = expected_value
                 best_centroid = centroid
@@ -191,7 +214,8 @@ class Fish(object):
         self.position = self.position + direction * self.territory_radius * self.rate_limiter
 
     def signal(self):
-        return 'fish', (self.tag, self.position, self.weight)
+        if not self.reserves <= 0:
+            return 'fish', (self.tag, self.position, self.weight, self.reserves)
 
 def divide_agents(agents, num_processes):
     divided_agents = [list() for _ in range(num_processes)]
@@ -200,7 +224,7 @@ def divide_agents(agents, num_processes):
     return divided_agents
 
 @click.command()
-@click.option('-n', '--num-agents', default=10, type=int)
+@click.option('-n', '--num-agents', default=150, type=int)
 @click.option('-p', '--num-processes', default=10, type=int)
 @click.option('-s', '--time-steps', default=100, type=int)
 @click.option('-o', '--output-file', default='output.csv')
@@ -220,7 +244,7 @@ def main(
         habitat_radius * 2
     )
 
-    habitat_values = np.sin(habitat_centroids*np.pi*3)
+    habitat_values = habitat_centroids ** 2
     habitat_values[habitat_values < 0] = 0
     habitat_centroids = np.array([
         [x] for x in habitat_centroids
@@ -239,10 +263,12 @@ def main(
         max((habitat_radius / unit_territory_radius) ** 2, 0.25), 1
     ]
     rate_limiter = 0.25
+    consumption_rate = 0.25
     fish = [
         Fish(
             tag, np.array([np.random.uniform(*stream_bounds)]), np.random.uniform(*weight_bounds), 
-            habitat_centroids, habitat_values, unit_territory_radius, rate_limiter
+            habitat_centroids, habitat_values, unit_territory_radius, rate_limiter, consumption_rate,
+            stream_bounds
         )
         for tag in range(num_agents)
     ]
