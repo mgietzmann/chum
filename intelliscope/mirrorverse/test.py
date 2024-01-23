@@ -1,12 +1,17 @@
 from multiprocessing import Process, Queue
 import numpy as np
 import click
-import json
 from tqdm import tqdm
-from time import time
 from collections import Counter, defaultdict
 import pandas as pd
 
+
+"""
+Everything really should be in terms of rates. That way we can change the
+temporal resolution easily without having to go in and change loads of code.
+
+Probably can do the same thing with the spatial components as well. 
+"""
 
 class ComputeContainer(object):
 
@@ -223,13 +228,8 @@ def divide_agents(agents, num_processes):
         divided_agents[i % num_processes].append(agent)
     return divided_agents
 
-@click.command()
-@click.option('-n', '--num-agents', default=150, type=int)
-@click.option('-p', '--num-processes', default=10, type=int)
-@click.option('-s', '--time-steps', default=100, type=int)
-@click.option('-o', '--output-file', default='output.csv')
-def main(
-    num_agents, num_processes, time_steps, output_file
+def run_simulation(
+    num_agents, num_processes, time_steps
 ):
     pub_queues = [Queue() for _ in range(num_processes)]
     sub_queues = [Queue() for _ in range(num_processes)]
@@ -245,6 +245,7 @@ def main(
     )
 
     habitat_values = habitat_centroids ** 2
+    print('value of habitat:', sum(habitat_values))
     habitat_values[habitat_values < 0] = 0
     habitat_centroids = np.array([
         [x] for x in habitat_centroids
@@ -312,6 +313,19 @@ def main(
 
     print('writing results')
     df = exchanger.retrieve()
+    return df
+
+@click.command()
+@click.option('-n', '--num-agents', default=50, type=int)
+@click.option('-p', '--num-processes', default=10, type=int)
+@click.option('-s', '--time-steps', default=100, type=int)
+@click.option('-o', '--output-file', default='output.csv')
+def main(
+    num_agents, num_processes, time_steps, output_file
+):
+    df = run_simulation(
+        num_agents, num_processes, time_steps
+    )
     df.to_csv(output_file, index=False)
 
 if __name__ == '__main__':
